@@ -53,14 +53,36 @@ export class AuthUseCase {
   // Iniciar sesión
   async iniciarSesion(email: string, password: string) {
     try {
+      console.log("🔵 Intentando login:", email);
+
+      // IMPORTANTE: Primero limpiamos cualquier sesión anterior
+      await supabase.auth.signOut();
+      
+      // Esperar un momento para que se limpie completamente
+      await new Promise(resolve => setTimeout(resolve, 300));
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.log("❌ Error en login:", error);
+        throw error;
+      }
+
+      if (!data.user) {
+        throw new Error("No se obtuvo usuario");
+      }
+
+      console.log("✅ Login exitoso:", {
+        email: data.user.email,
+        id: data.user.id,
+      });
+
       return { success: true, user: data.user };
     } catch (error: any) {
+      console.log("❌ Error en iniciarSesion:", error);
       return { success: false, error: error.message };
     }
   }
@@ -68,10 +90,22 @@ export class AuthUseCase {
   // Cerrar sesión
   async cerrarSesion() {
     try {
+      console.log("🔵 Cerrando sesión...");
+
       const { error } = await supabase.auth.signOut();
-      if (error) throw error;
+      
+      if (error) {
+        console.log("❌ Error al cerrar sesión:", error);
+        throw error;
+      }
+
+      // IMPORTANTE: Esperar a que se limpie completamente
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      console.log("✅ Sesión cerrada exitosamente");
       return { success: true };
     } catch (error: any) {
+      console.log("❌ Error en cerrarSesion:", error);
       return { success: false, error: error.message };
     }
   }
@@ -94,7 +128,12 @@ export class AuthUseCase {
   async obtenerPerfilActual(): Promise<Perfil | null> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return null;
+      if (!user) {
+        console.log("⚠️  No hay usuario autenticado");
+        return null;
+      }
+
+      console.log("🔍 Buscando perfil para:", user.email);
 
       const { data, error } = await supabase
         .from("perfiles")
@@ -102,10 +141,19 @@ export class AuthUseCase {
         .eq("id", user.id)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.log("❌ Error al obtener perfil:", error);
+        throw error;
+      }
+
+      console.log("✅ Perfil obtenido:", {
+        email: data.email,
+        rol: data.rol,
+      });
+
       return data as Perfil;
     } catch (error) {
-      console.log("Error al obtener perfil:", error);
+      console.log("❌ Error en obtenerPerfilActual:", error);
       return null;
     }
   }
@@ -131,10 +179,14 @@ export class AuthUseCase {
   // Escuchar cambios de autenticación
   onAuthStateChange(callback: (perfil: Perfil | null) => void) {
     return supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("🔔 Auth state changed:", event);
+
       if (session?.user) {
+        console.log("✅ Sesión activa:", session.user.email);
         const perfil = await this.obtenerPerfilActual();
         callback(perfil);
       } else {
+        console.log("❌ No hay sesión activa");
         callback(null);
       }
     });

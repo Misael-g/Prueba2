@@ -9,6 +9,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/src/presentation/hooks/useAuth';
@@ -52,18 +53,30 @@ export default function LoginScreen() {
   const handleLogin = async () => {
     if (!validarFormulario()) return;
 
+    console.log("🔵 Botón de login presionado");
     setCargando(true);
-    const resultado = await iniciarSesion(email.trim(), password);
-    setCargando(false);
 
-    if (resultado.success) {
-      // La navegación se manejará automáticamente por el _layout.tsx
-      // según el rol del usuario
-    } else {
-      Alert.alert(
-        'Error de inicio de sesión',
-        resultado.error || 'Credenciales incorrectas'
-      );
+    try {
+      const resultado = await iniciarSesion(email.trim(), password);
+      
+      console.log("📊 Resultado del login:", resultado);
+
+      if (resultado.success) {
+        console.log("✅ Login exitoso, esperando navegación automática...");
+        // La navegación se manejará automáticamente por useAuth
+        // NO llamamos a setCargando(false) aquí para que siga mostrando el loading
+        // hasta que se complete la navegación
+      } else {
+        setCargando(false);
+        Alert.alert(
+          'Error de inicio de sesión',
+          resultado.error || 'Credenciales incorrectas'
+        );
+      }
+    } catch (error: any) {
+      setCargando(false);
+      console.log("❌ Error inesperado en login:", error);
+      Alert.alert('Error', 'Ocurrió un error inesperado');
     }
   };
 
@@ -117,6 +130,7 @@ export default function LoginScreen() {
               <TouchableOpacity
                 style={styles.passwordToggle}
                 onPress={() => setMostrarPassword(!mostrarPassword)}
+                disabled={cargando}
               >
                 <Text style={styles.passwordToggleText}>
                   {mostrarPassword ? '🙈' : '👁️'}
@@ -145,9 +159,16 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={cargando}
           >
-            <Text style={globalStyles.buttonText}>
-              {cargando ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-            </Text>
+            {cargando ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator color={colors.white} size="small" />
+                <Text style={[globalStyles.buttonText, styles.loadingText]}>
+                  Iniciando sesión...
+                </Text>
+              </View>
+            ) : (
+              <Text style={globalStyles.buttonText}>Iniciar Sesión</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -169,6 +190,16 @@ export default function LoginScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* Overlay de carga */}
+      {cargando && (
+        <View style={styles.overlay}>
+          <View style={styles.overlayContent}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.overlayText}>Autenticando...</Text>
+          </View>
+        </View>
+      )}
     </KeyboardAvoidingView>
   );
 }
@@ -249,6 +280,15 @@ const styles = StyleSheet.create({
   botonLogin: {
     marginTop: spacing.sm,
   },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  loadingText: {
+    marginLeft: spacing.sm,
+  },
   registroContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -274,5 +314,28 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     color: colors.textSecondary,
     textAlign: 'center',
+  },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlayContent: {
+    backgroundColor: colors.white,
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+    minWidth: 200,
+  },
+  overlayText: {
+    fontSize: fontSize.md,
+    color: colors.textPrimary,
+    fontWeight: '600',
   },
 });

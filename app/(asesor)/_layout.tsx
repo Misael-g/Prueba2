@@ -1,5 +1,6 @@
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
+import { Text } from 'react-native'; // ← AGREGAR ESTA LÍNEA
 import { useAuth } from '@/src/presentation/hooks/useAuth';
 import { colors } from '@/src/styles/theme';
 
