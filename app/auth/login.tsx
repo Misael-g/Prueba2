@@ -63,9 +63,6 @@ export default function LoginScreen() {
 
       if (resultado.success) {
         console.log("✅ Login exitoso, esperando navegación automática...");
-        // La navegación se manejará automáticamente por useAuth
-        // NO llamamos a setCargando(false) aquí para que siga mostrando el loading
-        // hasta que se complete la navegación
       } else {
         setCargando(false);
         Alert.alert(
@@ -78,6 +75,12 @@ export default function LoginScreen() {
       console.log("❌ Error inesperado en login:", error);
       Alert.alert('Error', 'Ocurrió un error inesperado');
     }
+  };
+
+  // 🆕 NUEVA FUNCIÓN: Entrar como invitado
+  const handleEntrarComoInvitado = () => {
+    console.log("👤 Entrando como invitado");
+    router.replace('/(invitado)/catalogo');
   };
 
   return (
@@ -172,6 +175,22 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* 🆕 BOTÓN INVITADO */}
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>O</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity
+          style={[globalStyles.button, styles.botonInvitado]}
+          onPress={handleEntrarComoInvitado}
+          disabled={cargando}
+        >
+          <Text style={styles.botonInvitadoIcono}>👤</Text>
+          <Text style={styles.botonInvitadoTexto}>Entrar como Invitado</Text>
+        </TouchableOpacity>
+
         {/* Registro */}
         <View style={styles.registroContainer}>
           <Text style={styles.registroTexto}>¿No tienes una cuenta?</Text>
@@ -242,7 +261,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   formulario: {
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   campo: {
     marginBottom: spacing.md,
@@ -288,6 +307,43 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginLeft: spacing.sm,
+  },
+  // 🆕 ESTILOS DIVIDER
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.lg,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  dividerText: {
+    marginHorizontal: spacing.md,
+    fontSize: fontSize.sm,
+    color: colors.textTertiary,
+    fontWeight: '600',
+  },
+  // 🆕 ESTILOS BOTÓN INVITADO
+  botonInvitado: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  botonInvitadoIcono: {
+    fontSize: 24,
+  },
+  botonInvitadoTexto: {
+    fontSize: fontSize.md,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
   registroContainer: {
     flexDirection: 'row',

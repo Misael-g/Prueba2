@@ -2,36 +2,85 @@ import { supabase } from "@/src/data/services/supabaseClient";
 import { Contratacion } from "../../models/Contratacion";
 
 export class ContratacionesUseCase {
-  // Obtener ID del asesor único
+  // Obtener ID del asesor único - CORREGIDO
   private async obtenerAsesorUnico() {
     try {
+      console.log("🔍 Buscando asesor disponible...");
+      
+      // ✅ SIN .single() - Retorna array
       const { data, error } = await supabase
         .from("perfiles")
-        .select("id")
+        .select("id, email, nombre_completo, rol")
         .eq("rol", "asesor_comercial")
-        .limit(1)
-        .single();
+        .limit(1);
 
-      if (error) throw error;
-      return data?.id || null;
-    } catch (error) {
-      console.log("❌ Error al obtener asesor:", error);
+      if (error) {
+        console.log("❌ Error al buscar asesor:", error);
+        throw error;
+      }
+
+      // ✅ Verificar si hay resultados
+      if (!data || data.length === 0) {
+        console.log("⚠️ No se encontró ningún asesor comercial");
+        
+        // Debug: Ver todos los perfiles
+        const { data: todosPerfiles } = await supabase
+          .from("perfiles")
+          .select("email, rol");
+        console.log("📋 Perfiles disponibles:", todosPerfiles);
+        
+        return null;
+      }
+
+      const asesor = data[0]; // ✅ Tomar el primer resultado
+      
+      console.log("✅ Asesor encontrado:", {
+        id: asesor.id,
+        email: asesor.email,
+        nombre: asesor.nombre_completo,
+        rol: asesor.rol
+      });
+
+      return asesor.id;
+    } catch (error: any) {
+      console.log("❌ Error completo al obtener asesor:", error);
       return null;
     }
   }
 
-  // Crear contratación (usuario)
+  // Crear contratación (usuario) - MEJORADO
   async crearContratacion(planId: string) {
     try {
       console.log("🔵 Creando contratación para plan:", planId);
 
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuario no autenticado");
+      if (!user) {
+        console.log("❌ Usuario no autenticado");
+        throw new Error("Usuario no autenticado");
+      }
+
+      console.log("👤 Usuario actual:", user.email);
 
       // Obtener asesor único
       const asesorId = await this.obtenerAsesorUnico();
-      if (!asesorId) throw new Error("No hay asesores disponibles");
+      
+      if (!asesorId) {
+        console.log("❌ No hay asesores disponibles en la base de datos");
+        
+        // 🆕 Intentar crear el asesor si no existe
+        console.log("🔧 Verificando si existe algún usuario que pueda ser asesor...");
+        const { data: todosPerfiles } = await supabase
+          .from("perfiles")
+          .select("email, rol");
+        
+        console.log("📋 Perfiles disponibles:", todosPerfiles);
+        
+        throw new Error(
+          "No hay asesores disponibles. Por favor, contacta al administrador del sistema."
+        );
+      }
 
+      console.log("📤 Insertando contratación...");
       const { data, error } = await supabase
         .from("contrataciones")
         .insert({
@@ -48,9 +97,12 @@ export class ContratacionesUseCase {
         `)
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.log("❌ Error al insertar contratación:", error);
+        throw error;
+      }
 
-      console.log("✅ Contratación creada:", data);
+      console.log("✅ Contratación creada exitosamente:", data.id);
       return { success: true, contratacion: data };
     } catch (error: any) {
       console.log("❌ Error al crear contratación:", error);

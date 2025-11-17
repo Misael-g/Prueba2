@@ -23,6 +23,7 @@ export default function RootLayout() {
         <Stack.Screen name="auth/login" />
         <Stack.Screen name="auth/register" />
         <Stack.Screen name="auth/forgot-password" />
+        <Stack.Screen name="(invitado)" />
         <Stack.Screen name="(usuario)" />
         <Stack.Screen name="(asesor)" />
       </Stack>
