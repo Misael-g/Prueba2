@@ -1,0 +1,215 @@
+import { supabase } from "@/src/data/services/supabaseClient";
+import { Contratacion } from "../../models/Contratacion";
+
+export class ContratacionesUseCase {
+  // Obtener ID del asesor único
+  private async obtenerAsesorUnico() {
+    try {
+      const { data, error } = await supabase
+        .from("perfiles")
+        .select("id")
+        .eq("rol", "asesor_comercial")
+        .limit(1)
+        .single();
+
+      if (error) throw error;
+      return data?.id || null;
+    } catch (error) {
+      console.log("❌ Error al obtener asesor:", error);
+      return null;
+    }
+  }
+
+  // Crear contratación (usuario)
+  async crearContratacion(planId: string) {
+    try {
+      console.log("🔵 Creando contratación para plan:", planId);
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuario no autenticado");
+
+      // Obtener asesor único
+      const asesorId = await this.obtenerAsesorUnico();
+      if (!asesorId) throw new Error("No hay asesores disponibles");
+
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .insert({
+          usuario_id: user.id,
+          plan_id: planId,
+          estado: "pendiente",
+          asesor_asignado: asesorId,
+        })
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          usuario:perfiles!contrataciones_usuario_id_fkey(*),
+          asesor:perfiles!contrataciones_asesor_asignado_fkey(*)
+        `)
+        .single();
+
+      if (error) throw error;
+
+      console.log("✅ Contratación creada:", data);
+      return { success: true, contratacion: data };
+    } catch (error: any) {
+      console.log("❌ Error al crear contratación:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Obtener contrataciones del usuario
+  async obtenerMisContrataciones(): Promise<Contratacion[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          asesor:perfiles!contrataciones_asesor_asignado_fkey(*)
+        `)
+        .eq("usuario_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      console.log("📋 Mis contrataciones:", data?.length || 0);
+      return data || [];
+    } catch (error) {
+      console.log("❌ Error al obtener contrataciones:", error);
+      return [];
+    }
+  }
+
+  // Obtener todas las contrataciones (asesor)
+  async obtenerTodasLasContrataciones(): Promise<Contratacion[]> {
+    try {
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          usuario:perfiles!contrataciones_usuario_id_fkey(*)
+        `)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      console.log("📋 Todas las contrataciones:", data?.length || 0);
+      return data || [];
+    } catch (error) {
+      console.log("❌ Error al obtener contrataciones:", error);
+      return [];
+    }
+  }
+
+  // Obtener contrataciones pendientes (asesor)
+  async obtenerContratacionesPendientes(): Promise<Contratacion[]> {
+    try {
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          usuario:perfiles!contrataciones_usuario_id_fkey(*)
+        `)
+        .eq("estado", "pendiente")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      console.log("⏳ Contrataciones pendientes:", data?.length || 0);
+      return data || [];
+    } catch (error) {
+      console.log("❌ Error al obtener pendientes:", error);
+      return [];
+    }
+  }
+
+  // Actualizar estado de contratación (asesor)
+  async actualizarEstadoContratacion(
+    id: string,
+    estado: 'aprobada' | 'rechazada' | 'cancelada',
+    numeroLinea?: string,
+    observaciones?: string
+  ) {
+    try {
+      console.log("🔵 Actualizando contratación:", { id, estado });
+
+      const updateData: any = {
+        estado,
+        observaciones,
+      };
+
+      // Si se aprueba, agregar fechas y número de línea
+      if (estado === 'aprobada') {
+        const fechaInicio = new Date();
+        const fechaFin = new Date();
+        fechaFin.setFullYear(fechaFin.getFullYear() + 1); // 1 año después
+
+        updateData.fecha_inicio = fechaInicio.toISOString().split('T')[0];
+        updateData.fecha_fin = fechaFin.toISOString().split('T')[0];
+        updateData.numero_linea = numeroLinea;
+      }
+
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .update(updateData)
+        .eq("id", id)
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          usuario:perfiles!contrataciones_usuario_id_fkey(*)
+        `)
+        .single();
+
+      if (error) throw error;
+
+      console.log("✅ Contratación actualizada:", data);
+      return { success: true, contratacion: data };
+    } catch (error: any) {
+      console.log("❌ Error al actualizar contratación:", error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Obtener contratación por ID
+  async obtenerContratacionPorId(id: string): Promise<Contratacion | null> {
+    try {
+      const { data, error } = await supabase
+        .from("contrataciones")
+        .select(`
+          *,
+          plan:planes_moviles(*),
+          usuario:perfiles!contrataciones_usuario_id_fkey(*),
+          asesor:perfiles!contrataciones_asesor_asignado_fkey(*)
+        `)
+        .eq("id", id)
+        .single();
+
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      console.log("❌ Error al obtener contratación:", error);
+      return null;
+    }
+  }
+
+  // Cancelar contratación (usuario)
+  async cancelarContratacion(id: string) {
+    try {
+      const { error } = await supabase
+        .from("contrataciones")
+        .update({ estado: "cancelada" })
+        .eq("id", id);
+
+      if (error) throw error;
+      return { success: true };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  }
+}
