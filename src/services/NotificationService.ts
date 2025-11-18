@@ -116,7 +116,7 @@ export class NotificationService {
     }
   }
 
-  // 🆕 CORREGIDO: Enviar notificación push a un usuario específico
+  // ✅✅ COMPLETAMENTE CORREGIDO: Enviar notificación push a un usuario específico
   static async sendPushNotification(
     userId: string,
     title: string,
@@ -124,18 +124,26 @@ export class NotificationService {
     data?: any
   ) {
     try {
-      // ✅ CRÍTICO: Verificar que NO sea el usuario actual
+      // ✅✅ CRÍTICO: Verificar que NO sea el usuario actual
       const { data: { user } } = await supabase.auth.getUser();
       
-      if (user && user.id === userId) {
-        console.log('⚠️ Bloqueado: Intento de enviar notificación a sí mismo');
+      if (!user) {
+        console.log('⚠️ No hay usuario autenticado');
+        return;
+      }
+
+      if (user.id === userId) {
+        console.log('❌❌ BLOQUEADO: Intento de enviar notificación a sí mismo');
+        console.log(`   ├─ Usuario actual: ${user.email} (${user.id})`);
+        console.log(`   └─ Usuario destino: ${userId}`);
         return;
       }
 
       console.log(`📤 [sendPushNotification] Iniciando envío:`);
-      console.log(`   └─ Para userId: ${userId}`);
-      console.log(`   └─ Usuario actual: ${user?.id}`);
-      console.log(`   └─ Título: ${title}`);
+      console.log(`   ├─ Para userId: ${userId}`);
+      console.log(`   ├─ Usuario actual: ${user.email} (${user.id})`);
+      console.log(`   ├─ Título: ${title}`);
+      console.log(`   └─ Body: ${body.substring(0, 50)}...`);
 
       // Obtener token del usuario RECEPTOR
       const { data: perfil, error } = await supabase
@@ -155,8 +163,8 @@ export class NotificationService {
       }
 
       console.log(`📋 Perfil receptor encontrado:`);
-      console.log(`   └─ Nombre: ${perfil.nombre_completo}`);
-      console.log(`   └─ Email: ${perfil.email}`);
+      console.log(`   ├─ Nombre: ${perfil.nombre_completo}`);
+      console.log(`   ├─ Email: ${perfil.email}`);
       console.log(`   └─ Push token: ${perfil.push_token ? '✅ Existe' : '❌ No existe'}`);
 
       if (!perfil.push_token) {
@@ -195,7 +203,7 @@ export class NotificationService {
         const { status, message: errorMsg, details } = result.data[0];
         
         if (status === 'ok') {
-          console.log('✅ Push notification enviada exitosamente');
+          console.log('✅✅ Push notification enviada exitosamente');
         } else {
           console.log('❌ Error al enviar:', errorMsg);
           console.log('   Detalles:', details);
@@ -236,5 +244,32 @@ export class NotificationService {
   // Cancelar todas las notificaciones programadas
   static async cancelAllNotifications() {
     await Notifications.cancelAllScheduledNotificationsAsync();
+  }
+
+  // 🆕 LIMPIAR TOKEN AL HACER LOGOUT
+  static async clearTokenOnLogout() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      console.log('🧹 Limpiando push token del perfil...');
+
+      const { error } = await supabase
+        .from('perfiles')
+        .update({ push_token: null })
+        .eq('id', user.id);
+
+      if (error) {
+        console.log('⚠️ Error al limpiar token:', error);
+      } else {
+        console.log('✅ Push token limpiado del perfil');
+      }
+
+      // También limpiar la variable local
+      this.expoPushToken = null;
+
+    } catch (error) {
+      console.error('❌ Error al limpiar token:', error);
+    }
   }
 }

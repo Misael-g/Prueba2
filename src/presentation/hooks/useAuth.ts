@@ -119,6 +119,16 @@ export function useAuth() {
   const cerrarSesion = async () => {
     console.log("🔵 Cerrando sesión desde hook");
     
+    // 🆕 IMPORTANTE: Limpiar el push token ANTES de cerrar sesión
+    try {
+      console.log("🧹 Limpiando push token antes de logout...");
+      const { NotificationService } = await import('@/src/services/NotificationService');
+      await NotificationService.clearTokenOnLogout();
+      console.log("✅ Token limpiado correctamente");
+    } catch (error) {
+      console.log("⚠️ Error al limpiar token:", error);
+    }
+    
     const resultado = await authUseCase.cerrarSesion();
     
     if (resultado.success) {

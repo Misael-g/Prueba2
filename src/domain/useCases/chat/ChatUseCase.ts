@@ -42,7 +42,7 @@ export class ChatUseCase {
     }
   }
 
-  // Enviar mensaje - 🆕 CORREGIDO
+  // Enviar mensaje - ✅✅ COMPLETAMENTE CORREGIDO
   async enviarMensaje(
     contratacionId: string,
     contenido: string
@@ -54,8 +54,62 @@ export class ChatUseCase {
         return { success: false, error: "Usuario no autenticado" };
       }
 
-      console.log("📤 Enviando mensaje de:", user.email);
+      console.log("📤 [ENVIAR] Usuario:", user.email, "ID:", user.id);
 
+      // 📋 PRIMERO: Obtener información de la contratación ANTES de insertar
+      const { data: contratacion, error: errorContratacion } = await supabase
+        .from("contrataciones")
+        .select(`
+          usuario_id,
+          asesor_asignado,
+          usuario:perfiles!contrataciones_usuario_id_fkey(nombre_completo, email),
+          asesor:perfiles!contrataciones_asesor_asignado_fkey(nombre_completo, email),
+          plan:planes_moviles(nombre)
+        `)
+        .eq("id", contratacionId)
+        .single();
+
+      if (errorContratacion || !contratacion) {
+        console.log("❌ No se encontró la contratación");
+        return { success: false, error: "Contratación no encontrada" };
+      }
+
+      console.log("📋 Contratación:");
+      console.log(`   ├─ Usuario: ${contratacion.usuario?.email} (${contratacion.usuario_id})`);
+      console.log(`   └─ Asesor: ${contratacion.asesor?.email} (${contratacion.asesor_asignado})`);
+
+      // ✅✅ DETERMINAR RECEPTOR ANTES DE INSERTAR
+      let receptorId: string | null = null;
+      let nombreEmisor = "Usuario";
+
+      if (user.id === contratacion.usuario_id) {
+        // El emisor es el USUARIO → receptor es el ASESOR
+        receptorId = contratacion.asesor_asignado;
+        nombreEmisor = contratacion.usuario?.nombre_completo || contratacion.usuario?.email || 'Usuario';
+        console.log("👤 Emisor: USUARIO → Receptor: ASESOR");
+      } else if (user.id === contratacion.asesor_asignado) {
+        // El emisor es el ASESOR → receptor es el USUARIO
+        receptorId = contratacion.usuario_id;
+        nombreEmisor = contratacion.asesor?.nombre_completo || contratacion.asesor?.email || 'Asesor';
+        console.log("👔 Emisor: ASESOR → Receptor: USUARIO");
+      } else {
+        console.log("❌ El usuario no pertenece a esta contratación");
+        return { success: false, error: "No autorizado" };
+      }
+
+      // ✅✅ VALIDACIÓN CRÍTICA FINAL
+      if (!receptorId || receptorId === user.id) {
+        console.log("❌ BLOQUEADO: Receptor inválido o es el mismo emisor");
+        console.log(`   ├─ ReceptorId: ${receptorId}`);
+        console.log(`   └─ EmisorId: ${user.id}`);
+        return { success: false, error: "Receptor inválido" };
+      }
+
+      console.log("✅ Validación OK:");
+      console.log(`   ├─ Emisor: ${user.id}`);
+      console.log(`   └─ Receptor: ${receptorId} ✓`);
+
+      // AHORA SÍ: Insertar el mensaje
       const { data, error } = await supabase
         .from("mensajes_chat")
         .insert({
@@ -68,70 +122,38 @@ export class ChatUseCase {
 
       if (error) throw error;
 
-      console.log("✅ Mensaje enviado exitosamente");
+      console.log("✅ Mensaje insertado en BD");
 
-      // 🆕 ENVIAR NOTIFICACIÓN SOLO AL RECEPTOR (NO AL EMISOR)
+      // 📤 ENVIAR NOTIFICACIÓN AL RECEPTOR
       try {
         const { NotificationService } = await import('@/src/services/NotificationService');
         
-        // 📋 Obtener información de la contratación
-        const { data: contratacion } = await supabase
-          .from("contrataciones")
-          .select(`
-            usuario_id,
-            asesor_asignado,
-            usuario:perfiles!contrataciones_usuario_id_fkey(nombre_completo),
-            asesor:perfiles!contrataciones_asesor_asignado_fkey(nombre_completo),
-            plan:planes_moviles(nombre)
-          `)
-          .eq("id", contratacionId)
-          .single();
-
-        if (contratacion) {
-          // ✅ Determinar quién es el EMISOR y quién es el RECEPTOR
-          const emisorEsUsuario = user.id === contratacion.usuario_id;
-          const emisorEsAsesor = user.id === contratacion.asesor_asignado;
-
-          // ✅ El receptor es el que NO es el emisor
-          const receptorId = emisorEsUsuario 
-            ? contratacion.asesor_asignado  // Si emisor es usuario → receptor es asesor
-            : contratacion.usuario_id;       // Si emisor es asesor → receptor es usuario
-
-          // ✅ Nombre del emisor para mostrar en la notificación
-          const nombreEmisor = emisorEsUsuario 
-            ? (contratacion.usuario?.nombre_completo || 'Usuario')
-            : (contratacion.asesor?.nombre_completo || 'Asesor');
-
-          // ✅✅ VERIFICACIÓN CRÍTICA: NO enviar si receptorId es el mismo que user.id
-          if (receptorId && receptorId !== user.id) {
-            console.log(`📤 Enviando notificación:`);
-            console.log(`   └─ De: ${nombreEmisor} (${user.id})`);
-            console.log(`   └─ Para: ${receptorId}`);
-            console.log(`   └─ Mensaje: "${contenido.substring(0, 50)}..."`);
-            
-            await NotificationService.sendPushNotification(
-              receptorId,
-              `💬 ${nombreEmisor}`,
-              contenido.length > 100 ? `${contenido.substring(0, 100)}...` : contenido,
-              { 
-                type: 'nuevo_mensaje', 
-                contratacion_id: contratacionId,
-                emisor_id: user.id,
-                plan_nombre: contratacion.plan?.nombre
-              }
-            );
-
-            console.log("✅ Notificación enviada correctamente");
-          } else {
-            console.log("⚠️ No se envía notificación (receptor = emisor)");
+        console.log(`📤 Enviando notificación push:`);
+        console.log(`   ├─ De: ${nombreEmisor}`);
+        console.log(`   ├─ Para: ${receptorId}`);
+        console.log(`   └─ Contenido: "${contenido.substring(0, 50)}..."`);
+        
+        await NotificationService.sendPushNotification(
+          receptorId,
+          `💬 ${nombreEmisor}`,
+          contenido.length > 100 ? `${contenido.substring(0, 100)}...` : contenido,
+          { 
+            type: 'nuevo_mensaje', 
+            contratacion_id: contratacionId,
+            emisor_id: user.id,
+            plan_nombre: contratacion.plan?.nombre
           }
-        }
+        );
+
+        console.log("✅ Notificación enviada correctamente");
+
       } catch (notifError) {
         console.log("⚠️ Error al enviar notificación:", notifError);
         // No fallar el envío del mensaje si la notificación falla
       }
 
       return { success: true };
+
     } catch (error: any) {
       console.error("❌ Error al enviar mensaje:", error);
       return { success: false, error: error.message };
@@ -188,7 +210,7 @@ export class ChatUseCase {
           filter: `contratacion_id=eq.${contratacionId}`
         },
         async (payload) => {
-          console.log('🔨 Nuevo mensaje recibido!', payload.new);
+          console.log('📨 Nuevo mensaje recibido!', payload.new);
 
           try {
             const { data, error } = await supabase
