@@ -13,34 +13,39 @@ export function useAuth() {
   useEffect(() => {
     console.log("🔵 useAuth iniciado");
     
-    // Verificar sesión inicial
     verificarSesion();
 
-    // Escuchar cambios de autenticación
     const { data: subscription } = authUseCase.onAuthStateChange(async (perfilActualizado) => {
       console.log("🔔 Cambio de auth state:", perfilActualizado?.email || 'sin sesión');
       
       setPerfil(perfilActualizado);
       setCargando(false);
 
-      // IMPORTANTE: Navegar automáticamente según el rol
       if (perfilActualizado) {
         console.log("✅ Perfil obtenido, navegando según rol:", perfilActualizado.rol);
         
-        // 🆕 REGISTRAR NOTIFICACIONES PUSH (CRÍTICO)
+        // ✅ Registrar notificaciones
         try {
-          console.log("📱 Registrando push token para:", perfilActualizado.email);
+          console.log("📱 Registrando notificaciones para:", perfilActualizado.email);
           const { NotificationService } = await import('@/src/services/NotificationService');
+          
           const token = await NotificationService.registerForPushNotifications();
           
           if (token) {
-            console.log("✅ Push token registrado exitosamente");
-            console.log("   Token:", token.substring(0, 50) + "...");
+            console.log("✅ Notificaciones configuradas");
+            
+            // ✅ CARGAR NOTIFICACIONES PENDIENTES
+            await NotificationService.loadPendingNotifications();
+            
+            // ✅ SUSCRIBIRSE A NUEVAS NOTIFICACIONES (Realtime)
+            NotificationService.subscribeToNotifications((notification) => {
+              console.log("🔔 Notificación recibida:", notification.title);
+            });
           } else {
-            console.log("⚠️ No se pudo obtener push token");
+            console.log("⚠️ No se pudieron configurar notificaciones");
           }
         } catch (error) {
-          console.log("⚠️ Error al registrar notificaciones:", error);
+          console.log("⚠️ Error al configurar notificaciones:", error);
         }
         
         setTimeout(() => {
@@ -72,18 +77,26 @@ export function useAuth() {
     setPerfil(perfilActual);
     setCargando(false);
 
-    // 🆕 Si hay sesión, registrar push token
     if (perfilActual) {
       try {
-        console.log("📱 Sesión existente detectada, registrando push token...");
+        console.log("📱 Sesión existente detectada, configurando notificaciones...");
         const { NotificationService } = await import('@/src/services/NotificationService');
+        
         const token = await NotificationService.registerForPushNotifications();
         
         if (token) {
-          console.log("✅ Push token actualizado para sesión existente");
+          console.log("✅ Notificaciones configuradas para sesión existente");
+          
+          // Cargar notificaciones que llegaron mientras estaba cerrada
+          await NotificationService.loadPendingNotifications();
+          
+          // Suscribirse a nuevas
+          NotificationService.subscribeToNotifications((notification) => {
+            console.log("🔔 Nueva notificación:", notification.title);
+          });
         }
       } catch (error) {
-        console.log("⚠️ Error al registrar push token:", error);
+        console.log("⚠️ Error al configurar notificaciones:", error);
       }
     }
   };
@@ -93,7 +106,6 @@ export function useAuth() {
     const resultado = await authUseCase.registrar(email, password, nombreCompleto);
     
     if (resultado.success && !resultado.needsEmailConfirmation) {
-      // Si el registro fue exitoso y no necesita confirmación, recargar perfil
       await verificarSesion();
     }
     
@@ -107,8 +119,6 @@ export function useAuth() {
     
     if (resultado.success) {
       console.log("✅ Login exitoso en hook, recargando perfil...");
-      
-      // Esperar un momento y recargar el perfil
       await new Promise(resolve => setTimeout(resolve, 500));
       await verificarSesion();
     }
@@ -119,14 +129,13 @@ export function useAuth() {
   const cerrarSesion = async () => {
     console.log("🔵 Cerrando sesión desde hook");
     
-    // 🆕 IMPORTANTE: Limpiar el push token ANTES de cerrar sesión
     try {
-      console.log("🧹 Limpiando push token antes de logout...");
+      console.log("🧹 Limpiando notificaciones antes de logout...");
       const { NotificationService } = await import('@/src/services/NotificationService');
       await NotificationService.clearTokenOnLogout();
-      console.log("✅ Token limpiado correctamente");
+      console.log("✅ Notificaciones limpiadas");
     } catch (error) {
-      console.log("⚠️ Error al limpiar token:", error);
+      console.log("⚠️ Error al limpiar notificaciones:", error);
     }
     
     const resultado = await authUseCase.cerrarSesion();
@@ -135,7 +144,6 @@ export function useAuth() {
       console.log("✅ Sesión cerrada en hook");
       setPerfil(null);
       
-      // Navegar a login después de un momento
       setTimeout(() => {
         router.replace('/auth/login');
       }, 300);
@@ -152,7 +160,6 @@ export function useAuth() {
     const resultado = await authUseCase.actualizarPerfil(datos);
     
     if (resultado.success && perfil) {
-      // Actualizar el perfil localmente
       setPerfil({ ...perfil, ...datos });
     }
     
