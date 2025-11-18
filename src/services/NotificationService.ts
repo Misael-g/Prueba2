@@ -124,59 +124,50 @@ export class NotificationService {
     data?: any
   ) {
     try {
-      console.log(`📤 Enviando notificación a usuario: ${userId}`);
-      
-      // Obtener token del usuario receptor
+      // 🆕 En Expo Go, usar notificaciones locales
+      if (!Device.isDevice || __DEV__) {
+        console.log('📱 Expo Go detectado - usando notificación local');
+        await this.sendLocalNotification(title, body, data);
+        return;
+      }
+
+      // Obtener token del usuario
       const { data: perfil, error } = await supabase
         .from('perfiles')
         .select('push_token')
         .eq('id', userId)
         .single();
 
-      if (error) {
-        console.log('❌ Error al obtener perfil:', error);
+      if (error || !perfil?.push_token) {
+        console.log('⚠️ Usuario no tiene token de push - enviando local');
+        await this.sendLocalNotification(title, body, data);
         return;
       }
 
-      if (!perfil?.push_token) {
-        console.log('⚠️ Usuario no tiene token de push registrado');
-        return;
-      }
-
-      console.log('✅ Token encontrado, enviando push notification...');
-
-      // Enviar notificación push vía Expo Push API
       const message = {
         to: perfil.push_token,
         sound: 'default',
         title,
         body,
-        data: data || {},
+        data,
         priority: 'high',
-        channelId: 'default',
       };
 
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
-          'Accept-Encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(message),
       });
 
       const result = await response.json();
-      
-      if (result.data && result.data[0]?.status === 'ok') {
-        console.log('✅ Notificación push enviada exitosamente');
-      } else {
-        console.log('⚠️ Respuesta de Expo Push:', result);
-      }
-
-      return result;
+      console.log('✅ Push notification enviada:', result);
     } catch (error) {
       console.error('❌ Error al enviar push notification:', error);
+      // Fallback a notificación local
+      await this.sendLocalNotification(title, body, data);
     }
   }
 

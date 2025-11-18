@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { Perfil } from "../../domain/models/Perfil";
 import { AuthUseCase } from "../../domain/useCases/auth/AuthUseCase";
 
+
 const authUseCase = new AuthUseCase();
 
 export function useAuth() {
