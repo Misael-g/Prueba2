@@ -16,22 +16,37 @@ Notifications.setNotificationHandler({
 export class NotificationService {
   private static expoPushToken: string | null = null;
 
-  // Registrar token y guardar en Supabase
+  // ✅ Registrar token y guardarlo en la tabla user_devices
   static async registerForPushNotifications(): Promise<string | null> {
     try {
-      // Verificar si es dispositivo físico
-      if (!Device.isDevice) {
-        console.log('⚠️ Las notificaciones push solo funcionan en dispositivos físicos');
-        return null;
+      console.log('🔵 [INICIO] registerForPushNotifications');
+      
+      console.log('📱 Tipo de dispositivo:', {
+        isDevice: Device.isDevice,
+        brand: Device.brand,
+        modelName: Device.modelName,
+        osName: Device.osName,
+        osVersion: Device.osVersion,
+      });
+
+      if (Device.isDevice) {
+        console.log('✅ Es dispositivo físico');
+      } else {
+        console.log('⚠️ Es emulador - El token se generará pero las notificaciones pueden no funcionar');
       }
 
       // Solicitar permisos
+      console.log('🔐 Verificando permisos de notificación...');
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      console.log('📋 Estado de permisos actual:', existingStatus);
+      
       let finalStatus = existingStatus;
 
       if (existingStatus !== 'granted') {
+        console.log('⚠️ Permisos no otorgados, solicitando...');
         const { status } = await Notifications.requestPermissionsAsync();
         finalStatus = status;
+        console.log('📋 Nuevo estado de permisos:', status);
       }
 
       if (finalStatus !== 'granted') {
@@ -39,14 +54,19 @@ export class NotificationService {
         return null;
       }
 
+      console.log('✅ Permisos otorgados, obteniendo token...');
+
       // Obtener token de Expo
       const projectId = Constants.expoConfig?.extra?.eas?.projectId;
       
+      console.log('🔍 ProjectId encontrado:', projectId);
+      
       if (!projectId) {
-        console.log('⚠️ No se encontró projectId en app.json');
+        console.log('❌ No se encontró projectId en app.json');
         return null;
       }
 
+      console.log('🚀 Solicitando token a Expo Push Service...');
       const tokenData = await Notifications.getExpoPushTokenAsync({ projectId });
       this.expoPushToken = tokenData.data;
 
@@ -54,39 +74,66 @@ export class NotificationService {
 
       // Configuración de canal en Android
       if (Platform.OS === 'android') {
+        console.log('🤖 Configurando canal de Android...');
         await Notifications.setNotificationChannelAsync('default', {
           name: 'Tigo Conecta',
           importance: Notifications.AndroidImportance.MAX,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#0066CC',
         });
+        console.log('✅ Canal de Android configurado');
       }
 
-      // Guardar token en perfil del usuario
-      await this.saveTokenToProfile(this.expoPushToken);
+      // 🆕 GUARDAR TOKEN EN LA TABLA user_devices
+      console.log('💾 Guardando token en user_devices...');
+      await this.saveTokenToDevicesTable(this.expoPushToken);
 
+      console.log('🎉 [FIN] registerForPushNotifications completado exitosamente');
       return this.expoPushToken;
-    } catch (error) {
-      console.error('❌ Error al registrar notificaciones:', error);
+    } catch (error: any) {
+      console.error('❌❌ Error COMPLETO al registrar notificaciones:');
+      console.error('   Nombre:', error.name);
+      console.error('   Mensaje:', error.message);
+      console.error('   Stack:', error.stack);
       return null;
     }
   }
 
-  // Guardar token en Supabase
-  private static async saveTokenToProfile(token: string) {
+  // 🆕 Guardar token en la tabla user_devices (permite múltiples dispositivos)
+  private static async saveTokenToDevicesTable(token: string) {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        console.log('⚠️ No hay usuario para guardar token');
+        return;
+      }
 
-      const { error } = await supabase
-        .from('perfiles')
-        .update({ push_token: token })
-        .eq('id', user.id);
+      console.log(`💾 Guardando/actualizando token para: ${user.email}`);
 
-      if (error) {
-        console.log('⚠️ Error al guardar token:', error);
+      // Obtener nombre del dispositivo
+      const deviceName = Device.deviceName || 
+                        `${Device.brand || 'Desconocido'} ${Device.modelName || 'Dispositivo'}`;
+
+      // 🔥 INSERTAR O ACTUALIZAR el token del dispositivo
+      const { error: upsertError } = await supabase
+        .from('user_devices')
+        .upsert(
+          {
+            user_id: user.id,
+            push_token: token,
+            device_name: deviceName,
+            last_active: new Date().toISOString(),
+          },
+          {
+            onConflict: 'user_id,push_token', // Si existe (user_id + token), actualiza
+            ignoreDuplicates: false,
+          }
+        );
+
+      if (upsertError) {
+        console.log('⚠️ Error al guardar token:', upsertError);
       } else {
-        console.log('✅ Token guardado en perfil');
+        console.log('✅ Token guardado/actualizado en user_devices');
       }
     } catch (error) {
       console.error('❌ Error al guardar token:', error);
@@ -116,7 +163,7 @@ export class NotificationService {
     }
   }
 
-  // ✅✅ COMPLETAMENTE CORREGIDO: Enviar notificación push a un usuario específico
+  // ✅✅ Enviar notificación push a TODOS los dispositivos de un usuario
   static async sendPushNotification(
     userId: string,
     title: string,
@@ -124,7 +171,7 @@ export class NotificationService {
     data?: any
   ) {
     try {
-      // ✅✅ CRÍTICO: Verificar que NO sea el usuario actual
+      // ✅ Verificar que NO sea el usuario actual
       const { data: { user } } = await supabase.auth.getUser();
       
       if (!user) {
@@ -133,55 +180,43 @@ export class NotificationService {
       }
 
       if (user.id === userId) {
-        console.log('❌❌ BLOQUEADO: Intento de enviar notificación a sí mismo');
-        console.log(`   ├─ Usuario actual: ${user.email} (${user.id})`);
-        console.log(`   └─ Usuario destino: ${userId}`);
+        console.log('❌ BLOQUEADO: Intento de enviar notificación a sí mismo');
         return;
       }
 
-      console.log(`📤 [sendPushNotification] Iniciando envío:`);
-      console.log(`   ├─ Para userId: ${userId}`);
-      console.log(`   ├─ Usuario actual: ${user.email} (${user.id})`);
-      console.log(`   ├─ Título: ${title}`);
-      console.log(`   └─ Body: ${body.substring(0, 50)}...`);
+      console.log(`📤 [sendPushNotification] Enviando a todos los dispositivos de userId: ${userId}`);
 
-      // Obtener token del usuario RECEPTOR
-      const { data: perfil, error } = await supabase
-        .from('perfiles')
-        .select('push_token, nombre_completo, email')
-        .eq('id', userId)
-        .single();
+      // 🆕 OBTENER TODOS LOS TOKENS DEL USUARIO RECEPTOR
+      const { data: devices, error } = await supabase
+        .from('user_devices')
+        .select('push_token, device_name')
+        .eq('user_id', userId);
 
       if (error) {
-        console.log('❌ Error al obtener perfil receptor:', error);
+        console.log('❌ Error al obtener dispositivos:', error);
         return;
       }
 
-      if (!perfil) {
-        console.log('⚠️ No se encontró perfil del receptor');
+      if (!devices || devices.length === 0) {
+        console.log('⚠️ Usuario receptor no tiene dispositivos registrados');
         return;
       }
 
-      console.log(`📋 Perfil receptor encontrado:`);
-      console.log(`   ├─ Nombre: ${perfil.nombre_completo}`);
-      console.log(`   ├─ Email: ${perfil.email}`);
-      console.log(`   └─ Push token: ${perfil.push_token ? '✅ Existe' : '❌ No existe'}`);
+      console.log(`📋 Se encontraron ${devices.length} dispositivo(s):`);
+      devices.forEach((device, i) => {
+        console.log(`   ${i + 1}. ${device.device_name} - Token: ${device.push_token.substring(0, 20)}...`);
+      });
 
-      if (!perfil.push_token) {
-        console.log('⚠️ Usuario receptor no tiene token de push registrado');
-        return;
-      }
-
-      // 🚀 Enviar push notification real vía Expo Push API
-      const message = {
-        to: perfil.push_token,
+      // 🚀 Enviar notificación a TODOS los dispositivos
+      const messages = devices.map(device => ({
+        to: device.push_token,
         sound: 'default',
         title,
         body,
         data: data || {},
         priority: 'high',
         channelId: 'default',
-      };
+      }));
 
       console.log('📡 Enviando a Expo Push Service...');
 
@@ -192,22 +227,21 @@ export class NotificationService {
           'Accept-Encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(message),
+        body: JSON.stringify(messages),
       });
 
       const result = await response.json();
       
       console.log('✅ Respuesta de Expo:', result);
 
-      if (result.data && result.data[0]) {
-        const { status, message: errorMsg, details } = result.data[0];
-        
-        if (status === 'ok') {
-          console.log('✅✅ Push notification enviada exitosamente');
-        } else {
-          console.log('❌ Error al enviar:', errorMsg);
-          console.log('   Detalles:', details);
-        }
+      if (result.data) {
+        result.data.forEach((res: any, index: number) => {
+          if (res.status === 'ok') {
+            console.log(`✅ Notificación ${index + 1} enviada exitosamente`);
+          } else {
+            console.log(`❌ Error en notificación ${index + 1}:`, res.message);
+          }
+        });
       }
 
     } catch (error) {
@@ -220,12 +254,10 @@ export class NotificationService {
     onNotificationReceived: (notification: Notifications.Notification) => void,
     onNotificationTapped: (response: Notifications.NotificationResponse) => void
   ) {
-    // Escuchar notificaciones recibidas
     const receivedSubscription = Notifications.addNotificationReceivedListener(
       onNotificationReceived
     );
 
-    // Escuchar cuando el usuario toca una notificación
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(
       onNotificationTapped
     );
@@ -246,30 +278,65 @@ export class NotificationService {
     await Notifications.cancelAllScheduledNotificationsAsync();
   }
 
-  // 🆕 LIMPIAR TOKEN AL HACER LOGOUT
+  // 🆕 Limpiar SOLO el token del dispositivo actual al hacer logout
   static async clearTokenOnLogout() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        console.log('⚠️ No hay usuario para limpiar token');
+        return;
+      }
 
-      console.log('🧹 Limpiando push token del perfil...');
+      if (!this.expoPushToken) {
+        console.log('⚠️ No hay token local para limpiar');
+        return;
+      }
 
+      console.log(`🧹 Limpiando token del dispositivo actual...`);
+
+      // 🔥 ELIMINAR SOLO EL TOKEN DEL DISPOSITIVO ACTUAL
       const { error } = await supabase
-        .from('perfiles')
-        .update({ push_token: null })
-        .eq('id', user.id);
+        .from('user_devices')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('push_token', this.expoPushToken);
 
       if (error) {
         console.log('⚠️ Error al limpiar token:', error);
       } else {
-        console.log('✅ Push token limpiado del perfil');
+        console.log('✅ Token del dispositivo actual eliminado');
       }
 
-      // También limpiar la variable local
+      // Limpiar la variable local
       this.expoPushToken = null;
 
     } catch (error) {
       console.error('❌ Error al limpiar token:', error);
+    }
+  }
+
+  // 🆕 Limpiar dispositivos inactivos (opcional, para mantenimiento)
+  static async cleanupInactiveDevices(daysInactive: number = 30) {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - daysInactive);
+
+      const { error } = await supabase
+        .from('user_devices')
+        .delete()
+        .eq('user_id', user.id)
+        .lt('last_active', cutoffDate.toISOString());
+
+      if (error) {
+        console.log('⚠️ Error al limpiar dispositivos inactivos:', error);
+      } else {
+        console.log('✅ Dispositivos inactivos limpiados');
+      }
+    } catch (error) {
+      console.error('❌ Error al limpiar dispositivos:', error);
     }
   }
 }

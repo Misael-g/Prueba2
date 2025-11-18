@@ -32,6 +32,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -52,7 +53,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "42e8c41b-85c1-42be-99fe-fa7fc7d164ea"
+        "projectId": "8c4f4991-4463-4c51-8fbd-34c2c7166eaf"
       }
     },
     "owner": "misaeltt"
