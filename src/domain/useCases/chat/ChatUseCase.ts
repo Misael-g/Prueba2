@@ -25,7 +25,6 @@ export class ChatUseCase {
 
       console.log("💬 Mensajes obtenidos:", data?.length || 0);
 
-      // Mapear y revertir orden
       const mensajesFormateados = (data || []).map((msg: any) => ({
         id: msg.id,
         contratacion_id: msg.contratacion_id,
@@ -43,7 +42,7 @@ export class ChatUseCase {
     }
   }
 
-  // Enviar mensaje
+  // Enviar mensaje - 🆕 CORREGIDO
   async enviarMensaje(
     contratacionId: string,
     contenido: string
@@ -54,6 +53,8 @@ export class ChatUseCase {
       if (!user) {
         return { success: false, error: "Usuario no autenticado" };
       }
+
+      console.log("📤 Enviando mensaje de:", user.email);
 
       const { data, error } = await supabase
         .from("mensajes_chat")
@@ -67,13 +68,13 @@ export class ChatUseCase {
 
       if (error) throw error;
 
-      console.log("✅ Mensaje enviado");
+      console.log("✅ Mensaje enviado exitosamente");
 
-      // 🆕 ENVIAR NOTIFICACIÓN PUSH SOLO AL RECEPTOR (NO AL EMISOR)
+      // 🆕 ENVIAR NOTIFICACIÓN SOLO AL RECEPTOR (NO AL EMISOR)
       try {
         const { NotificationService } = await import('@/src/services/NotificationService');
         
-        // Obtener contratación para identificar al receptor
+        // 📋 Obtener información de la contratación
         const { data: contratacion } = await supabase
           .from("contrataciones")
           .select(`
@@ -87,17 +88,26 @@ export class ChatUseCase {
           .single();
 
         if (contratacion) {
-          // ✅ Determinar receptor: el que NO es el emisor
-          const esUsuario = user.id === contratacion.usuario_id;
-          const receptorId = esUsuario ? contratacion.asesor_asignado : contratacion.usuario_id;
-          
+          // ✅ Determinar quién es el EMISOR y quién es el RECEPTOR
+          const emisorEsUsuario = user.id === contratacion.usuario_id;
+          const emisorEsAsesor = user.id === contratacion.asesor_asignado;
+
+          // ✅ El receptor es el que NO es el emisor
+          const receptorId = emisorEsUsuario 
+            ? contratacion.asesor_asignado  // Si emisor es usuario → receptor es asesor
+            : contratacion.usuario_id;       // Si emisor es asesor → receptor es usuario
+
           // ✅ Nombre del emisor para mostrar en la notificación
-          const nombreEmisor = esUsuario 
+          const nombreEmisor = emisorEsUsuario 
             ? (contratacion.usuario?.nombre_completo || 'Usuario')
             : (contratacion.asesor?.nombre_completo || 'Asesor');
 
-          if (receptorId && receptorId !== user.id) { // ✅ Verificar que NO sea el mismo usuario
-            console.log(`📤 Enviando notificación a receptor: ${receptorId}`);
+          // ✅✅ VERIFICACIÓN CRÍTICA: NO enviar si receptorId es el mismo que user.id
+          if (receptorId && receptorId !== user.id) {
+            console.log(`📤 Enviando notificación:`);
+            console.log(`   └─ De: ${nombreEmisor} (${user.id})`);
+            console.log(`   └─ Para: ${receptorId}`);
+            console.log(`   └─ Mensaje: "${contenido.substring(0, 50)}..."`);
             
             await NotificationService.sendPushNotification(
               receptorId,
@@ -106,13 +116,19 @@ export class ChatUseCase {
               { 
                 type: 'nuevo_mensaje', 
                 contratacion_id: contratacionId,
-                emisor_id: user.id
+                emisor_id: user.id,
+                plan_nombre: contratacion.plan?.nombre
               }
             );
+
+            console.log("✅ Notificación enviada correctamente");
+          } else {
+            console.log("⚠️ No se envía notificación (receptor = emisor)");
           }
         }
       } catch (notifError) {
         console.log("⚠️ Error al enviar notificación:", notifError);
+        // No fallar el envío del mensaje si la notificación falla
       }
 
       return { success: true };
@@ -172,7 +188,7 @@ export class ChatUseCase {
           filter: `contratacion_id=eq.${contratacionId}`
         },
         async (payload) => {
-          console.log('📨 Nuevo mensaje recibido!', payload.new);
+          console.log('🔨 Nuevo mensaje recibido!', payload.new);
 
           try {
             const { data, error } = await supabase
@@ -187,7 +203,6 @@ export class ChatUseCase {
             if (error) {
               console.error('⚠️ Error al obtener mensaje completo:', error);
 
-              // Fallback
               const mensajeFallback: MensajeChat = {
                 id: payload.new.id,
                 contratacion_id: payload.new.contratacion_id,
@@ -232,7 +247,6 @@ export class ChatUseCase {
         console.log('📡 Estado de suscripción chat:', status);
       });
 
-    // Retornar función para desuscribirse
     return () => {
       if (this.channel) {
         supabase.removeChannel(this.channel);
@@ -262,7 +276,7 @@ export class ChatUseCase {
     }
   }
 
-  // Eliminar mensaje (opcional)
+  // Eliminar mensaje
   async eliminarMensaje(mensajeId: string): Promise<{ success: boolean; error?: string }> {
     try {
       const { error } = await supabase

@@ -3,14 +3,12 @@ import { useRouter } from "expo-router";
 import { Perfil } from "../../domain/models/Perfil";
 import { AuthUseCase } from "../../domain/useCases/auth/AuthUseCase";
 
-
 const authUseCase = new AuthUseCase();
 
 export function useAuth() {
   const router = useRouter();
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [cargando, setCargando] = useState(true);
-
 
   useEffect(() => {
     console.log("🔵 useAuth iniciado");
@@ -29,10 +27,18 @@ export function useAuth() {
       if (perfilActualizado) {
         console.log("✅ Perfil obtenido, navegando según rol:", perfilActualizado.rol);
         
-        // 🆕 Registrar notificaciones push
+        // 🆕 REGISTRAR NOTIFICACIONES PUSH (CRÍTICO)
         try {
+          console.log("📱 Registrando push token para:", perfilActualizado.email);
           const { NotificationService } = await import('@/src/services/NotificationService');
-          await NotificationService.registerForPushNotifications();
+          const token = await NotificationService.registerForPushNotifications();
+          
+          if (token) {
+            console.log("✅ Push token registrado exitosamente");
+            console.log("   Token:", token.substring(0, 50) + "...");
+          } else {
+            console.log("⚠️ No se pudo obtener push token");
+          }
         } catch (error) {
           console.log("⚠️ Error al registrar notificaciones:", error);
         }
@@ -65,6 +71,21 @@ export function useAuth() {
     
     setPerfil(perfilActual);
     setCargando(false);
+
+    // 🆕 Si hay sesión, registrar push token
+    if (perfilActual) {
+      try {
+        console.log("📱 Sesión existente detectada, registrando push token...");
+        const { NotificationService } = await import('@/src/services/NotificationService');
+        const token = await NotificationService.registerForPushNotifications();
+        
+        if (token) {
+          console.log("✅ Push token actualizado para sesión existente");
+        }
+      } catch (error) {
+        console.log("⚠️ Error al registrar push token:", error);
+      }
+    }
   };
 
   const registrar = async (email: string, password: string, nombreCompleto: string) => {

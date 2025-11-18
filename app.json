@@ -52,6 +52,7 @@
     "extra": {
       "router": {},
       "eas": {
+        "projectId": "42e8c41b-85c1-42be-99fe-fa7fc7d164ea"
       }
     },
     "owner": "misaeltt"

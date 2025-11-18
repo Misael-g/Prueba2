@@ -93,7 +93,7 @@ export class NotificationService {
     }
   }
 
-  // Enviar notificación local (para testing)
+  // Enviar notificación local (SOLO para el dispositivo actual)
   static async sendLocalNotification(
     title: string,
     body: string,
@@ -107,7 +107,7 @@ export class NotificationService {
           data,
           sound: true,
         },
-        trigger: null, // Enviar inmediatamente
+        trigger: null,
       });
 
       console.log('✅ Notificación local enviada:', title);
@@ -116,7 +116,7 @@ export class NotificationService {
     }
   }
 
-  // Enviar notificación push a un usuario específico
+  // 🆕 CORREGIDO: Enviar notificación push a un usuario específico
   static async sendPushNotification(
     userId: string,
     title: string,
@@ -124,50 +124,86 @@ export class NotificationService {
     data?: any
   ) {
     try {
-      // 🆕 En Expo Go, usar notificaciones locales
-      if (!Device.isDevice || __DEV__) {
-        console.log('📱 Expo Go detectado - usando notificación local');
-        await this.sendLocalNotification(title, body, data);
+      // ✅ CRÍTICO: Verificar que NO sea el usuario actual
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (user && user.id === userId) {
+        console.log('⚠️ Bloqueado: Intento de enviar notificación a sí mismo');
         return;
       }
 
-      // Obtener token del usuario
+      console.log(`📤 [sendPushNotification] Iniciando envío:`);
+      console.log(`   └─ Para userId: ${userId}`);
+      console.log(`   └─ Usuario actual: ${user?.id}`);
+      console.log(`   └─ Título: ${title}`);
+
+      // Obtener token del usuario RECEPTOR
       const { data: perfil, error } = await supabase
         .from('perfiles')
-        .select('push_token')
+        .select('push_token, nombre_completo, email')
         .eq('id', userId)
         .single();
 
-      if (error || !perfil?.push_token) {
-        console.log('⚠️ Usuario no tiene token de push - enviando local');
-        await this.sendLocalNotification(title, body, data);
+      if (error) {
+        console.log('❌ Error al obtener perfil receptor:', error);
         return;
       }
 
+      if (!perfil) {
+        console.log('⚠️ No se encontró perfil del receptor');
+        return;
+      }
+
+      console.log(`📋 Perfil receptor encontrado:`);
+      console.log(`   └─ Nombre: ${perfil.nombre_completo}`);
+      console.log(`   └─ Email: ${perfil.email}`);
+      console.log(`   └─ Push token: ${perfil.push_token ? '✅ Existe' : '❌ No existe'}`);
+
+      if (!perfil.push_token) {
+        console.log('⚠️ Usuario receptor no tiene token de push registrado');
+        return;
+      }
+
+      // 🚀 Enviar push notification real vía Expo Push API
       const message = {
         to: perfil.push_token,
         sound: 'default',
         title,
         body,
-        data,
+        data: data || {},
         priority: 'high',
+        channelId: 'default',
       };
+
+      console.log('📡 Enviando a Expo Push Service...');
 
       const response = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
           Accept: 'application/json',
+          'Accept-Encoding': 'gzip, deflate',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(message),
       });
 
       const result = await response.json();
-      console.log('✅ Push notification enviada:', result);
+      
+      console.log('✅ Respuesta de Expo:', result);
+
+      if (result.data && result.data[0]) {
+        const { status, message: errorMsg, details } = result.data[0];
+        
+        if (status === 'ok') {
+          console.log('✅ Push notification enviada exitosamente');
+        } else {
+          console.log('❌ Error al enviar:', errorMsg);
+          console.log('   Detalles:', details);
+        }
+      }
+
     } catch (error) {
-      console.error('❌ Error al enviar push notification:', error);
-      // Fallback a notificación local
-      await this.sendLocalNotification(title, body, data);
+      console.error('❌ Error en sendPushNotification:', error);
     }
   }
 
