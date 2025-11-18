@@ -2,7 +2,7 @@ import { supabase } from "@/src/data/services/supabaseClient";
 import { Contratacion } from "../../models/Contratacion";
 
 export class ContratacionesUseCase {
-  // Obtener ID del asesor único - CORREGIDO
+  // Obtener ID del asesor único - MEJORADO
   private async obtenerAsesorUnico() {
     try {
       console.log("🔍 Buscando asesor disponible...");
@@ -23,13 +23,34 @@ export class ContratacionesUseCase {
       if (!data || data.length === 0) {
         console.log("⚠️ No se encontró ningún asesor comercial");
         
-        // Debug: Ver todos los perfiles
-        const { data: todosPerfiles } = await supabase
-          .from("perfiles")
-          .select("email, rol");
-        console.log("📋 Perfiles disponibles:", todosPerfiles);
+        // 🆕 CREAR ASESOR DE SISTEMA SI NO EXISTE
+        console.log("🔧 Intentando crear asesor de sistema automáticamente...");
         
-        return null;
+        const { data: nuevoAsesor, error: errorCrear } = await supabase
+          .from("perfiles")
+          .insert({
+            email: 'sistema@tigo.com.ec',
+            nombre_completo: 'Sistema Tigo',
+            rol: 'asesor_comercial',
+            telefono: '1-800-TIGO'
+          })
+          .select()
+          .single();
+
+        if (errorCrear) {
+          console.log("❌ No se pudo crear asesor automático:", errorCrear);
+          
+          // Debug: Ver todos los perfiles
+          const { data: todosPerfiles } = await supabase
+            .from("perfiles")
+            .select("email, rol");
+          console.log("📋 Perfiles disponibles:", todosPerfiles);
+          
+          return null;
+        }
+
+        console.log("✅ Asesor de sistema creado:", nuevoAsesor.email);
+        return nuevoAsesor.id;
       }
 
       const asesor = data[0]; // ✅ Tomar el primer resultado

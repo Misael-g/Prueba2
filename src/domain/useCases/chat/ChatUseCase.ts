@@ -55,17 +55,66 @@ export class ChatUseCase {
         return { success: false, error: "Usuario no autenticado" };
       }
 
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("mensajes_chat")
         .insert({
           contratacion_id: contratacionId,
           emisor_id: user.id,
           contenido,
-        });
+        })
+        .select()
+        .single();
 
       if (error) throw error;
 
       console.log("✅ Mensaje enviado");
+
+      // 🆕 ENVIAR NOTIFICACIÓN PUSH SOLO AL RECEPTOR (NO AL EMISOR)
+      try {
+        const { NotificationService } = await import('@/src/services/NotificationService');
+        
+        // Obtener contratación para identificar al receptor
+        const { data: contratacion } = await supabase
+          .from("contrataciones")
+          .select(`
+            usuario_id,
+            asesor_asignado,
+            usuario:perfiles!contrataciones_usuario_id_fkey(nombre_completo),
+            asesor:perfiles!contrataciones_asesor_asignado_fkey(nombre_completo),
+            plan:planes_moviles(nombre)
+          `)
+          .eq("id", contratacionId)
+          .single();
+
+        if (contratacion) {
+          // ✅ Determinar receptor: el que NO es el emisor
+          const esUsuario = user.id === contratacion.usuario_id;
+          const receptorId = esUsuario ? contratacion.asesor_asignado : contratacion.usuario_id;
+          
+          // ✅ Nombre del emisor para mostrar en la notificación
+          const nombreEmisor = esUsuario 
+            ? (contratacion.usuario?.nombre_completo || 'Usuario')
+            : (contratacion.asesor?.nombre_completo || 'Asesor');
+
+          if (receptorId && receptorId !== user.id) { // ✅ Verificar que NO sea el mismo usuario
+            console.log(`📤 Enviando notificación a receptor: ${receptorId}`);
+            
+            await NotificationService.sendPushNotification(
+              receptorId,
+              `💬 ${nombreEmisor}`,
+              contenido.length > 100 ? `${contenido.substring(0, 100)}...` : contenido,
+              { 
+                type: 'nuevo_mensaje', 
+                contratacion_id: contratacionId,
+                emisor_id: user.id
+              }
+            );
+          }
+        }
+      } catch (notifError) {
+        console.log("⚠️ Error al enviar notificación:", notifError);
+      }
+
       return { success: true };
     } catch (error: any) {
       console.error("❌ Error al enviar mensaje:", error);

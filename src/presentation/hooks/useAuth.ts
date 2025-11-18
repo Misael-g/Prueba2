@@ -10,6 +10,7 @@ export function useAuth() {
   const [perfil, setPerfil] = useState<Perfil | null>(null);
   const [cargando, setCargando] = useState(true);
 
+
   useEffect(() => {
     console.log("🔵 useAuth iniciado");
     
@@ -17,7 +18,7 @@ export function useAuth() {
     verificarSesion();
 
     // Escuchar cambios de autenticación
-    const { data: subscription } = authUseCase.onAuthStateChange((perfilActualizado) => {
+    const { data: subscription } = authUseCase.onAuthStateChange(async (perfilActualizado) => {
       console.log("🔔 Cambio de auth state:", perfilActualizado?.email || 'sin sesión');
       
       setPerfil(perfilActualizado);
@@ -27,12 +28,20 @@ export function useAuth() {
       if (perfilActualizado) {
         console.log("✅ Perfil obtenido, navegando según rol:", perfilActualizado.rol);
         
+        // 🆕 Registrar notificaciones push
+        try {
+          const { NotificationService } = await import('@/src/services/NotificationService');
+          await NotificationService.registerForPushNotifications();
+        } catch (error) {
+          console.log("⚠️ Error al registrar notificaciones:", error);
+        }
+        
         setTimeout(() => {
           if (perfilActualizado.rol === 'asesor_comercial') {
-            console.log("➡️  Navegando a dashboard asesor");
+            console.log("➡️ Navegando a dashboard asesor");
             router.replace('/(asesor)/dashboard');
           } else if (perfilActualizado.rol === 'usuario_registrado') {
-            console.log("➡️  Navegando a catálogo usuario");
+            console.log("➡️ Navegando a catálogo usuario");
             router.replace('/(usuario)/catalogo');
           }
         }, 300);
